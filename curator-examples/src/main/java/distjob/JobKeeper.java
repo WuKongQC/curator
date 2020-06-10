@@ -9,7 +9,6 @@ import org.apache.curator.retry.ExponentialBackoffRetry;
 import org.apache.curator.utils.CloseableUtils;
 import org.apache.curator.x.discovery.ServiceInstance;
 
-import javax.annotation.PreDestroy;
 import java.util.List;
 import java.util.UUID;
 
@@ -25,8 +24,7 @@ public class JobKeeper {
     // ZooKeeper 锁节点路径, 分布式锁的相关操作都是在这个节点上进行
     private final String lockPath = "/delayque/distributed-lock";
 
-    //distjob/jobName/instance
-    private final String instancePath ;
+    private  DataPath dataPath;
 
     private  String jobName ;
 
@@ -45,9 +43,11 @@ public class JobKeeper {
 
     RegisterService registerService;
 
+    LeaderService leaderService;
+
     JobKeeper(String jobName, String connectString){
         this.jobName = jobName;
-        instancePath = String.format("/distjob/%s/instance", jobName);
+        dataPath = new DataPath(jobName);
 
         this.connectString = connectString;
     }
@@ -68,12 +68,14 @@ public class JobKeeper {
         client.start();
 
 
-        finderService = new FinderService(client, instancePath, jobName);
+        finderService = new FinderService(client, dataPath.getInstancePath(), jobName);
         finderService.start();
 
-        registerService = new RegisterService(client, instancePath, jobName, 8080, "hehe");
+        registerService = new RegisterService(client, dataPath.getInstancePath(), jobName, 8080, "hehe");
         registerService.start();
 
+        leaderService = new LeaderService(client, finderService, dataPath, jobName);
+        leaderService.start();
 
         List<ServiceInstance<String>> services =  finderService.listInstances(jobName);
         System.out.println("list servers start:");
