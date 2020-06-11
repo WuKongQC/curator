@@ -9,7 +9,10 @@ import org.apache.curator.retry.ExponentialBackoffRetry;
 import org.apache.curator.utils.CloseableUtils;
 import org.apache.curator.x.discovery.ServiceInstance;
 
+import java.util.HashSet;
+import java.util.LinkedList;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -45,11 +48,18 @@ public class JobKeeper {
 
     LeaderService leaderService;
 
+    WorkKeeper workKeeper;
+
+
+    SimpleJob job;
+
+
     JobKeeper(String jobName, String connectString){
         this.jobName = jobName;
         dataPath = new DataPath(jobName);
 
         this.connectString = connectString;
+        this.job = new OneJob();
     }
 
 
@@ -77,6 +87,8 @@ public class JobKeeper {
         leaderService = new LeaderService(client, finderService, dataPath, jobName);
         leaderService.start();
 
+        workKeeper = new WorkKeeper(client, dataPath, job);
+
         List<ServiceInstance<String>> services =  finderService.listInstances(jobName);
         System.out.println("list servers start:");
         for(ServiceInstance<String> ss:services){
@@ -84,6 +96,26 @@ public class JobKeeper {
         }
         System.out.println("list servers end");
     }
+
+
+    public void workLoop() throws Exception{
+        while(true){
+
+            Thread.sleep(5*10000);
+
+            int shardSum = 12;
+            Set<Integer> shardItems = new HashSet<>();
+            workKeeper.refresh(shardSum,shardItems);
+
+        }
+
+
+    }
+
+
+
+
+
 
 
     public void close() throws Exception {

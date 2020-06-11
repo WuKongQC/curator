@@ -117,6 +117,8 @@ public class LeaderService extends LeaderSelectorListenerAdapter implements Clos
                 for(int i = 0; i < sc; ++i){
                     client.setData().forPath(dataPath.getShardSuggestPath(i), usedInst.get(i%usedInst.size()).getBytes());
                 }
+
+                client.setData().forPath(dataPath.getShardingDataPath(), dataBuilder.toString().getBytes());
             }
 
 

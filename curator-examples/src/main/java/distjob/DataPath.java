@@ -20,6 +20,9 @@ public class DataPath {
     // /distjob/jobName/suggest/0
     private  String shardSuggestPath;
 
+    private  String shardLockPath;
+
+
     public DataPath(String jobName){
         this.jobName = jobName;
         instancePath = String.format("/distjob/%s/instance", jobName);
@@ -27,6 +30,7 @@ public class DataPath {
         shardingDataPath = String.format("/distjob/%s/shardingData", jobName);
         shardingCountPath = String.format("/distjob/%s/shardingCount", jobName);
         shardSuggestPath = String.format("/distjob/%s/suggest/", jobName);
+        shardLockPath = String.format("/distjob/%s/lock/", jobName);
     }
 
     public String getJobName() {
@@ -57,5 +61,8 @@ public class DataPath {
         return shardSuggestPath + item;
     }
 
+    public String getShardLockPath(int item) {
+        return shardLockPath + item;
+    }
 
 }
