@@ -9,6 +9,7 @@ import org.apache.curator.retry.ExponentialBackoffRetry;
 import org.apache.curator.utils.CloseableUtils;
 import org.apache.curator.x.discovery.ServiceInstance;
 
+import java.lang.management.ManagementFactory;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
@@ -21,11 +22,9 @@ import java.util.UUID;
  */
 public class JobKeeper {
 
-    private String  nodeId = UUID.randomUUID().toString();
+    private static final String DELIMITER = "@-@";
 
-
-    // ZooKeeper 锁节点路径, 分布式锁的相关操作都是在这个节点上进行
-    private final String lockPath = "/delayque/distributed-lock";
+    private String jobInstanceId = IpUtils.getIp() + DELIMITER + ManagementFactory.getRuntimeMXBean().getName().split("@")[0];
 
     private  DataPath dataPath;
 
@@ -50,6 +49,7 @@ public class JobKeeper {
 
     WorkKeeper workKeeper;
 
+    EventBus eventBus;
 
     SimpleJob job;
 
@@ -66,6 +66,9 @@ public class JobKeeper {
 
 
     public void init() throws Exception {
+
+        eventBus = new EventBus();
+
         // 设置 ZooKeeper 服务地址为本机的 2181 端口
         //connectString = "127.0.0.1:2181,127.0.0.1:2182,127.0.0.1:2183";
         // 重试策略
@@ -81,13 +84,15 @@ public class JobKeeper {
         finderService = new FinderService(client, dataPath.getInstancePath(), jobName);
         finderService.start();
 
-        registerService = new RegisterService(client, dataPath.getInstancePath(), jobName, 8080, "hehe");
+        registerService = new RegisterService(client, dataPath.getInstancePath(), jobName, jobInstanceId);
         registerService.start();
 
         leaderService = new LeaderService(client, finderService, dataPath, jobName);
         leaderService.start();
 
         workKeeper = new WorkKeeper(client, dataPath, job);
+
+
 
         List<ServiceInstance<String>> services =  finderService.listInstances(jobName);
         System.out.println("list servers start:");
@@ -103,12 +108,38 @@ public class JobKeeper {
 
             Thread.sleep(5*10000);
 
-            int shardSum = 12;
-            Set<Integer> shardItems = new HashSet<>();
-            workKeeper.refresh(shardSum,shardItems);
+            Set<EventBus.EventType> events =  eventBus.aqiureEvent();
 
+            for(EventBus.EventType event: events){
+
+                switch (event){
+                    case EventType_ReShard:
+                        processReshard();
+                        break;
+                        default:
+                            break;
+
+                }
+            }
         }
 
+
+    }
+
+
+    void processReshard() throws Exception{
+        int shardSum = Integer.parseInt(new String(client.getData().forPath(dataPath.getShardingCountPath())));
+
+        Set<Integer> shardItems = new HashSet<>();
+
+        for(int i = 0; i < shardSum; ++i){
+            String node = new String(client.getData().forPath(dataPath.getShardSuggestPath(i)));
+            if(jobInstanceId.equals(node)){
+                shardItems.add(i);
+            }
+        }
+
+        workKeeper.refresh(shardSum,shardItems);
 
     }
 

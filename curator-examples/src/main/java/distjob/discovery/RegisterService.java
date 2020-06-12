@@ -22,15 +22,14 @@ public class RegisterService implements Closeable {
     private final ServiceDiscovery<String> serviceDiscovery;
     private final ServiceInstance<String> thisInstance;
 
-    public RegisterService(CuratorFramework client, String path, String serviceName, int port, String description) throws Exception
+    public RegisterService(CuratorFramework client, String path, String serviceName,  String jobInstanceId) throws Exception
     {
         // in a real application, you'd have a convention of some kind for the URI layout
         UriSpec uriSpec = new UriSpec("{scheme}://foo.com:{port}");
 
         thisInstance = ServiceInstance.<String>builder()
                 .name(serviceName)
-                .payload(description)
-                .port(port) // in a real application, you'd use a common port
+                .payload(jobInstanceId)
                 .uriSpec(uriSpec)
                 .build();
 

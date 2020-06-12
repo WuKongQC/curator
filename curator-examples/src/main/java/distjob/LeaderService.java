@@ -96,7 +96,7 @@ public class LeaderService extends LeaderSelectorListenerAdapter implements Clos
 
             List<String> usedInst = new LinkedList<>();
             for(ServiceInstance<String> inst :instances){
-                usedInst.add(inst.getAddress()+":" + inst.getPort());
+                usedInst.add(inst.getPayload());
             }
             usedInst.sort((Comparator.naturalOrder()));
 
