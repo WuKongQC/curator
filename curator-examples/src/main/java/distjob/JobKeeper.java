@@ -5,6 +5,8 @@ import distjob.discovery.RegisterService;
 import org.apache.curator.RetryPolicy;
 import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.framework.CuratorFrameworkFactory;
+import org.apache.curator.framework.recipes.cache.CuratorCache;
+import org.apache.curator.framework.recipes.cache.CuratorCacheListener;
 import org.apache.curator.retry.ExponentialBackoffRetry;
 import org.apache.curator.utils.CloseableUtils;
 import org.apache.curator.x.discovery.ServiceInstance;
@@ -46,6 +48,8 @@ public class JobKeeper {
     RegisterService registerService;
 
     LeaderService leaderService;
+
+    CuratorCache reshardData;
 
     WorkKeeper workKeeper;
 
@@ -89,6 +93,15 @@ public class JobKeeper {
 
         leaderService = new LeaderService(client, finderService, dataPath, jobName);
         leaderService.start();
+
+        {
+            reshardData = CuratorCache.build(client, dataPath.getShardingDataPath());
+            CuratorCacheListener listener = CuratorCacheListener.builder().
+                    forCreatesAndChanges((a, b)->eventBus.setEvent(EventBus.EventType.EventType_ReFreash)).build();
+            reshardData.listenable().addListener(listener);
+        }
+
+
 
         workKeeper = new WorkKeeper(client, dataPath, job);
 
