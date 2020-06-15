@@ -7,9 +7,14 @@ import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.framework.CuratorFrameworkFactory;
 import org.apache.curator.framework.recipes.cache.CuratorCache;
 import org.apache.curator.framework.recipes.cache.CuratorCacheListener;
+import org.apache.curator.framework.recipes.cache.CuratorCache;
+import org.apache.curator.framework.recipes.cache.CuratorCacheListener;
+import org.apache.curator.framework.state.ConnectionState;
 import org.apache.curator.retry.ExponentialBackoffRetry;
 import org.apache.curator.utils.CloseableUtils;
 import org.apache.curator.x.discovery.ServiceInstance;
+import org.apache.zookeeper.KeeperException;
+import org.apache.zookeeper.data.Stat;
 
 import java.lang.management.ManagementFactory;
 import java.util.HashSet;
@@ -55,6 +60,8 @@ public class JobKeeper {
 
     EventBus eventBus;
 
+    CuratorCache shardDataCache;
+
     SimpleJob job;
 
 
@@ -84,6 +91,7 @@ public class JobKeeper {
         // 创建会话
         client.start();
 
+        initData(12, client);
 
         finderService = new FinderService(client, dataPath.getInstancePath(), jobName);
         finderService.start();
@@ -107,12 +115,33 @@ public class JobKeeper {
 
 
 
+        CuratorCacheListener listener = CuratorCacheListener.builder().forCreatesAndChanges((o, n)->{
+            eventBus.setEvent(EventBus.EventType.EventType_ReFreash);
+        }).build();
+
+        shardDataCache = CuratorCache.build(client, dataPath.getShardingDataPath());
+        shardDataCache.listenable().addListener(listener);
+        shardDataCache.start();
+
+        client.getConnectionStateListenable().addListener((a, b)->{
+                    if(b == ConnectionState.SUSPENDED || b == ConnectionState.LOST){
+                        eventBus.setEvent(EventBus.EventType.EventType_ReFreash);
+                    }
+        });
+
+
+
+
+
         List<ServiceInstance<String>> services =  finderService.listInstances(jobName);
         System.out.println("list servers start:");
         for(ServiceInstance<String> ss:services){
             System.out.println("server:" + ss.getAddress() + ":" + ss.getPort());
         }
         System.out.println("list servers end");
+
+
+        workLoop();
     }
 
 
@@ -129,6 +158,8 @@ public class JobKeeper {
                     case EventType_ReShard:
                         processReshard();
                         break;
+                    case EventType_ReFreash:
+                        return;
                         default:
                             break;
 
@@ -157,22 +188,121 @@ public class JobKeeper {
     }
 
 
+    void initData(int shardSum, CuratorFramework client) throws  Exception{
+
+
+        Stat st = client.checkExists().forPath(dataPath.getInstancePath());
+        if(st == null){
+            try{
+                client.create().creatingParentContainersIfNeeded().forPath(dataPath.getInstancePath(),
+                        String.valueOf(shardSum).getBytes());
+            }catch (KeeperException.NodeExistsException existsException){
+
+            }
+        }
+
+        for(int item = 0; item < shardSum; ++item){
+            Stat st1 = client.checkExists().forPath(dataPath.getShardSuggestPath(item));
+            if(st1 == null){
+                try{
+                    client.create().creatingParentContainersIfNeeded().forPath(dataPath.getShardSuggestPath(item));
+                }catch (KeeperException.NodeExistsException existsException){
+
+                }
+            }
+
+            st1 = client.checkExists().forPath(dataPath.getShardLockPath(item));
+            if(st1 == null){
+                try{
+                    client.create().creatingParentContainersIfNeeded().forPath(dataPath.getShardLockPath(item));
+                }catch (KeeperException.NodeExistsException existsException){
+
+                }
+            }
+        }
+
+       st = client.checkExists().forPath(dataPath.getShardingDataPath());
+        if(st == null){
+            try{
+                client.create().creatingParentContainersIfNeeded().forPath(dataPath.getShardingDataPath(),
+                        String.valueOf(shardSum).getBytes());
+            }catch (KeeperException.NodeExistsException existsException){
+
+            }
+        }
+
+        st = client.checkExists().forPath(dataPath.getLeaderPath());
+        if(st == null){
+            try{
+                client.create().creatingParentContainersIfNeeded().forPath(dataPath.getLeaderPath());
+            }catch (KeeperException.NodeExistsException existsException){
+
+            }
+        }
+
+         st = client.checkExists().forPath(dataPath.getShardingCountPath());
+        if(st == null){
+            try{
+                client.create().creatingParentContainersIfNeeded().forPath(dataPath.getShardingCountPath(),
+                         String.valueOf(shardSum).getBytes());
+            }catch (KeeperException.NodeExistsException existsException){
+
+            }
+
+        }else {
+            while(true){
+                int v = st.getVersion();
+                int shardVal = Integer.parseInt(new String(client.getData().forPath(dataPath.getShardingCountPath())));
+                if( shardSum > shardVal){
+                    try {
+                        client.setData().withVersion(v).forPath(dataPath.getShardingCountPath(), String.valueOf(shardSum).getBytes());
+                    }catch (KeeperException.BadVersionException bv){
+                        client.getData().storingStatIn(st).forPath(dataPath.getShardingCountPath());
+                    }
+                }
+            }
+
+        }
+
+    }
+
+
 
 
 
 
 
     public void close() throws Exception {
+
+        if(workKeeper != null){
+            workKeeper.close();
+            workKeeper = null;
+        }
+
+
+        if(shardDataCache != null){
+            CloseableUtils.closeQuietly(shardDataCache);
+            shardDataCache = null;
+        }
+        if(leaderService != null){
+            CloseableUtils.closeQuietly(leaderService);
+            leaderService = null;
+        }
+
         if(registerService != null){
-            registerService.close();
+            CloseableUtils.closeQuietly(registerService);
+            registerService = null;
         }
 
         if(finderService != null){
-            finderService.close();
+            CloseableUtils.closeQuietly(finderService);
+            finderService = null;
         }
         if(client != null){
-            client.close();
+            CloseableUtils.closeQuietly(client);
+            client = null;
         }
+
     }
 
 

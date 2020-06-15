@@ -53,6 +53,15 @@ public class WorkKeeper {
         }
     }
 
+    public void close(){
+        for(int i = 0; i < workNodes.length; ++i){
+            if( workNodes[i] != null){
+                workNodes[i].close();
+            }
+        }
+    }
+
+
 
 
 
