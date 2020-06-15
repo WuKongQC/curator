@@ -54,8 +54,6 @@ public class JobKeeper {
 
     LeaderService leaderService;
 
-    CuratorCache reshardData;
-
     WorkKeeper workKeeper;
 
     EventBus eventBus;
@@ -102,12 +100,6 @@ public class JobKeeper {
         leaderService = new LeaderService(client, finderService, dataPath, jobName);
         leaderService.start();
 
-        {
-            reshardData = CuratorCache.build(client, dataPath.getShardingDataPath());
-            CuratorCacheListener listener = CuratorCacheListener.builder().
-                    forCreatesAndChanges((a, b)->eventBus.setEvent(EventBus.EventType.EventType_ReFreash)).build();
-            reshardData.listenable().addListener(listener);
-        }
 
 
 
