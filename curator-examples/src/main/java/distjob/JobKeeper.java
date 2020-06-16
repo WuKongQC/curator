@@ -54,7 +54,9 @@ public class JobKeeper {
 
     LeaderService leaderService;
 
-    WorkKeeper workKeeper;
+    //WorkKeeper workKeeper;
+
+    WorkLeader wordLeader;
 
     EventBus eventBus;
 
@@ -74,7 +76,7 @@ public class JobKeeper {
 
 
 
-    public void init() throws Exception {
+    public void init() {
 
         eventBus = new EventBus();
 
@@ -91,29 +93,14 @@ public class JobKeeper {
 
         initData(12, client);
 
-        finderService = new FinderService(client, dataPath.getInstancePath(), jobName);
-        finderService.start();
-
-        registerService = new RegisterService(client, dataPath.getInstancePath(), jobName, jobInstanceId);
-        registerService.start();
-
-        leaderService = new LeaderService(client, finderService, dataPath, jobName);
-        leaderService.start();
+        initService();
 
 
 
-
-        workKeeper = new WorkKeeper(client, dataPath, job);
-
+        wordLeader = new WorkLeader(client, dataPath, job);
 
 
-        CuratorCacheListener listener = CuratorCacheListener.builder().forCreatesAndChanges((o, n)->{
-            eventBus.setEvent(EventBus.EventType.EventType_ReFreash);
-        }).build();
 
-        shardDataCache = CuratorCache.build(client, dataPath.getShardingDataPath());
-        shardDataCache.listenable().addListener(listener);
-        shardDataCache.start();
 
         client.getConnectionStateListenable().addListener((a, b)->{
                     if(b == ConnectionState.SUSPENDED || b == ConnectionState.LOST){
@@ -122,65 +109,91 @@ public class JobKeeper {
         });
 
 
-
-
-
-        List<ServiceInstance<String>> services =  finderService.listInstances(jobName);
-        System.out.println("list servers start:");
-        for(ServiceInstance<String> ss:services){
-            System.out.println("server:" + ss.getAddress() + ":" + ss.getPort());
-        }
-        System.out.println("list servers end");
-
-
         workLoop();
     }
 
 
-    public void workLoop() throws Exception{
+    public void workLoop() {
         while(true){
+            try {
+                Thread.sleep(5*10000);
 
-            Thread.sleep(5*10000);
+                Set<EventBus.EventType> events =  eventBus.aqiureEvent();
 
-            Set<EventBus.EventType> events =  eventBus.aqiureEvent();
+                for(EventBus.EventType event: events){
 
-            for(EventBus.EventType event: events){
-
-                switch (event){
-                    case EventType_ReShard:
-                        processReshard();
-                        break;
-                    case EventType_ReFreash:
-                        return;
+                    switch (event){
+                        case EventType_ReShard:
+                            processReshard();
+                            break;
+                        case EventType_ReFreash:
+                            return;
                         default:
                             break;
 
+                    }
                 }
+
+
+            }catch (InterruptedException ex){
+                System.out.println(" sleep:" + ex);
             }
         }
+
+    }
+
+
+    void processReshard() {
+        boolean suc = false;
+        while(!suc){
+            try{
+                int shardSum = Integer.parseInt(new String(client.getData().forPath(dataPath.getShardingCountPath())));
+
+                Set<Integer> shardItems = new HashSet<>();
+
+                for(int i = 0; i < shardSum; ++i){
+                    String node = new String(client.getData().forPath(dataPath.getShardSuggestPath(i)));
+                    if(jobInstanceId.equals(node)){
+                        shardItems.add(i);
+                    }
+                }
+
+                wordLeader.refresh(shardSum,shardItems);
+                suc = true;
+            }catch (Throwable th){
+                System.out.println("th:" + th);
+            }
+        }
+
 
 
     }
 
 
-    void processReshard() throws Exception{
-        int shardSum = Integer.parseInt(new String(client.getData().forPath(dataPath.getShardingCountPath())));
 
-        Set<Integer> shardItems = new HashSet<>();
+    void initData(int shardSum, CuratorFramework client){
+        int tryTime = 0;
+        boolean res = false;
+        while(!res){
+            try{
+                tryTime++;
+                System.out.println( "try init data:" + tryTime);
+                res = initDataOnce(shardSum, client);
+            }catch (Throwable ex){
+                System.out.println( "initData:" + ex);
+                try {
+                    Thread.sleep(10*1000);
+                }catch (Exception ee){
 
-        for(int i = 0; i < shardSum; ++i){
-            String node = new String(client.getData().forPath(dataPath.getShardSuggestPath(i)));
-            if(jobInstanceId.equals(node)){
-                shardItems.add(i);
+                }
+
             }
+
+
         }
-
-        workKeeper.refresh(shardSum,shardItems);
-
     }
 
-
-    void initData(int shardSum, CuratorFramework client) throws  Exception{
+    boolean initDataOnce(int shardSum, CuratorFramework client) throws  Exception{
 
 
         Stat st = client.checkExists().forPath(dataPath.getInstancePath());
@@ -256,6 +269,96 @@ public class JobKeeper {
 
         }
 
+        return true;
+
+    }
+
+
+    void initService(){
+        int tryTime = 0;
+        while(!initServiceOnce()){
+            try{
+                Thread.sleep(10*1000);
+            }catch (Exception ex){
+
+            }
+            System.out.println("try agine:" + tryTime);
+        }
+    }
+
+    boolean initServiceOnce(){
+        if(finderService == null){
+            try{
+                finderService = new FinderService(client, dataPath.getInstancePath(), jobName);
+                finderService.start();
+            }catch (Exception ex){
+                if(finderService != null){
+                    CloseableUtils.closeQuietly(finderService);
+                    finderService = null;
+                }
+
+                return false;
+            }
+        }
+
+        if(registerService == null){
+            try{
+                registerService = new RegisterService(client, dataPath.getInstancePath(), jobName, jobInstanceId);
+                registerService.start();
+            }catch (Exception ex){
+                if(registerService != null){
+                    CloseableUtils.closeQuietly(registerService);
+                    registerService = null;
+                }
+                return false;
+            }
+        }
+
+        if(leaderService == null){
+            try{
+                leaderService = new LeaderService(client, finderService, dataPath, jobName);
+                leaderService.start();
+            }catch (Exception ex){
+                if(leaderService != null){
+                    CloseableUtils.closeQuietly(leaderService);
+                    leaderService = null;
+                }
+                return false;
+            }
+        }
+
+
+        if(shardDataCache == null){
+            try{
+                CuratorCacheListener listener = CuratorCacheListener.builder().forCreatesAndChanges((o, n)->{
+                    eventBus.setEvent(EventBus.EventType.EventType_ReFreash);
+                }).build();
+
+                shardDataCache = CuratorCache.build(client, dataPath.getShardingDataPath());
+                shardDataCache.listenable().addListener(listener);
+                shardDataCache.start();
+            }catch (Exception ex){
+                if(shardDataCache != null){
+                    CloseableUtils.closeQuietly(shardDataCache);
+                    shardDataCache = null;
+                }
+                return false;
+            }
+
+        }
+
+        try{
+            List<ServiceInstance<String>> services =  finderService.listInstances(jobName);
+            System.out.println("list servers start:");
+            for(ServiceInstance<String> ss:services){
+                System.out.println("server:" + ss.getAddress() + ":" + ss.getPort());
+            }
+            System.out.println("list servers end");
+        }catch (Exception ex){
+            System.out.println("ex:" + ex);
+        }
+
+        return true;
     }
 
 
@@ -266,9 +369,9 @@ public class JobKeeper {
 
     public void close() throws Exception {
 
-        if(workKeeper != null){
-            workKeeper.close();
-            workKeeper = null;
+        if(wordLeader != null){
+            wordLeader.close();
+            wordLeader = null;
         }
 
 
@@ -294,6 +397,7 @@ public class JobKeeper {
             CloseableUtils.closeQuietly(client);
             client = null;
         }
+
 
     }
 

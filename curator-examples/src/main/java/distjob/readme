@@ -1,0 +1,17 @@
+
+断连情况下操作
+1）加锁                     阻塞2min53s    和重试次数和baseSleepMs有关
+2）解锁                     阻塞2min53s   会保证关闭
+3）读写数据                 阻塞2min53s
+4）建立客户端（newClient）  不阻塞
+5）关闭客户端               阻塞37s
+6）开启一个CuratorCache     不阻塞
+7）关闭一个CuratorCache     不阻塞
+
+
+
+sessionTimeout  <  2*tickTime  > 20*tickTime
+
+
+重连机制，是针对每一次操作。
+对于客户端的每次操作，都会执行一个周期的重试。

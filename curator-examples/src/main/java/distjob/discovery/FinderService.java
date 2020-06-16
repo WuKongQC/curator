@@ -23,7 +23,7 @@ public class FinderService   implements Closeable {
     private final ServiceDiscovery<String> serviceDiscovery;
 
 
-    public FinderService(CuratorFramework client, String path, String serviceName) throws Exception{
+    public FinderService(CuratorFramework client, String path, String serviceName) {
 
         JsonInstanceSerializer<String> serializer = new JsonInstanceSerializer<String>(String.class);
         serviceDiscovery = ServiceDiscoveryBuilder.builder(String.class).client(client).basePath(path).serializer(serializer).build();
