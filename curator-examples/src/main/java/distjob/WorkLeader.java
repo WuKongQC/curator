@@ -25,6 +25,7 @@ public class WorkLeader {
         this.client = client;
         this.dataPath = dataPath;
         this.job = job;
+        workNodes = new WorkLeader.WorkNode[0];
     }
 
     public void refresh(int shardSum, Set<Integer> allocItem){

@@ -87,41 +87,40 @@ public class LeaderService extends LeaderSelectorListenerAdapter implements Clos
         System.out.println(jobName + " has been leader " + leaderCount.getAndIncrement() + " time(s) before.");
         try
         {
+            while(true){
+                Thread.sleep(TimeUnit.SECONDS.toMillis(5));
 
+                System.out.println("leader check shard !");
+                List<ServiceInstance<String>> instances  = finderService.listInstances(jobName);
 
-            Thread.sleep(TimeUnit.SECONDS.toMillis(5));
-
-
-            List<ServiceInstance<String>> instances  = finderService.listInstances(jobName);
-
-            List<String> usedInst = new LinkedList<>();
-            for(ServiceInstance<String> inst :instances){
-                usedInst.add(inst.getPayload());
-            }
-            usedInst.sort((Comparator.naturalOrder()));
-
-            StringBuilder dataBuilder = new StringBuilder();
-            for(String ss:usedInst){
-                dataBuilder.append("$" +  ss);
-            }
-            String shardCountStr =  new String( client.getData().forPath(dataPath.getShardingCountPath()));
-            dataBuilder.append( "&" +shardCountStr);
-
-
-            String lastShardData = new String( client.getData().forPath(dataPath.getShardingDataPath()));
-
-            if(usedInst.size() != 0 && !lastShardData.equals(dataBuilder.toString())){
-                int sc = Integer.parseInt(shardCountStr);
-
-
-                for(int i = 0; i < sc; ++i){
-                    client.setData().forPath(dataPath.getShardSuggestPath(i), usedInst.get(i%usedInst.size()).getBytes());
+                List<String> usedInst = new LinkedList<>();
+                for(ServiceInstance<String> inst :instances){
+                    usedInst.add(inst.getPayload());
                 }
+                usedInst.sort((Comparator.naturalOrder()));
 
-                client.setData().forPath(dataPath.getShardingDataPath(), dataBuilder.toString().getBytes());
+                StringBuilder dataBuilder = new StringBuilder();
+                for(String ss:usedInst){
+                    dataBuilder.append("$" +  ss);
+                }
+                String shardCountStr =  new String( client.getData().forPath(dataPath.getShardingCountPath()));
+                dataBuilder.append( "&" +shardCountStr);
+
+
+                String lastShardData = new String( client.getData().forPath(dataPath.getShardingDataPath()));
+
+                if(usedInst.size() != 0 && !lastShardData.equals(dataBuilder.toString())){
+                    int sc = Integer.parseInt(shardCountStr);
+
+
+                    for(int i = 0; i < sc; ++i){
+                        client.setData().forPath(dataPath.getShardSuggestPath(i), usedInst.get(i%usedInst.size()).getBytes());
+                    }
+
+                    client.setData().forPath(dataPath.getShardingDataPath(), dataBuilder.toString().getBytes());
+                    System.out.println("set resharddata OK !");
+                }
             }
-
-
         }
         catch ( InterruptedException e )
         {

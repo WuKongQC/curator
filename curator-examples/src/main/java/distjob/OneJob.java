@@ -9,8 +9,13 @@ public class OneJob implements  SimpleJob {
     public void execute(int shardItem) throws  Exception{
         System.out.println("start item:" + shardItem);
         try{
-            Thread.sleep(10*1000);
+            while(true){
+                Thread.sleep(10*1000);
+                System.out.println("working:" + shardItem);
+            }
+
         }catch (InterruptedException ex){
+            System.out.println("interrupted:" + shardItem);
             Thread.interrupted();
             throw new InterruptedException("interrupted");
         }finally {

@@ -108,7 +108,7 @@ public class JobKeeper {
                     }
         });
 
-
+        eventBus.setEvent(EventBus.EventType.EventType_ReShard);
         workLoop();
     }
 
@@ -260,10 +260,14 @@ public class JobKeeper {
                 int shardVal = Integer.parseInt(new String(client.getData().forPath(dataPath.getShardingCountPath())));
                 if( shardSum > shardVal){
                     try {
+                        System.out.println("set ShardingCount:" + shardSum);
                         client.setData().withVersion(v).forPath(dataPath.getShardingCountPath(), String.valueOf(shardSum).getBytes());
+                        break;
                     }catch (KeeperException.BadVersionException bv){
                         client.getData().storingStatIn(st).forPath(dataPath.getShardingCountPath());
                     }
+                }else{
+                    break;
                 }
             }
 
@@ -331,7 +335,8 @@ public class JobKeeper {
         if(shardDataCache == null){
             try{
                 CuratorCacheListener listener = CuratorCacheListener.builder().forCreatesAndChanges((o, n)->{
-                    eventBus.setEvent(EventBus.EventType.EventType_ReFreash);
+                    System.out.println("listener resharded!");
+                    eventBus.setEvent(EventBus.EventType.EventType_ReShard);
                 }).build();
 
                 shardDataCache = CuratorCache.build(client, dataPath.getShardingDataPath());
@@ -407,11 +412,11 @@ public class JobKeeper {
     public static void main(String[] args) throws Exception{
 
 
-        JobKeeper jk = new JobKeeper("distJob", "172.28.22.7:2181");
+        JobKeeper jk = new JobKeeper("OneJob", "172.28.22.7:2181");
 
         jk.init();
 
-        Thread.sleep(1000);
+        Thread.sleep(60*1000);
         jk.close();
 
 
